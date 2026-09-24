@@ -17,3 +17,10 @@ Simply combine a normal door with a glass pane in a crafting table, or right cli
 
 ## FAQ for developers and the like
 If you wish to compile a previous version of Modern Glass Doors, please clone the repo using the appropriate tag from your desired version.
+
+Build with JDK 17 using `./gradlew build` (`gradlew.bat build` on Windows).
+Both `build` and `remapJar` automatically run data generation before packaging the
+block states, models, recipes, loot tables, and tags. Generated files live under
+`build/generated/resources` and are removed by `clean`.
+`./gradlew verifyRuntimeResources` checks the remapped JAR for all 24 doors and
+trapdoors and their model/texture references; this check also runs during `build`.

@@ -77,7 +77,15 @@ dependencies {
 }
 
 
+def generatedResources = layout.buildDirectory.dir('generated/resources')
+
 loom {
+	mods {
+		modern_glass_doors {
+			sourceSet sourceSets.main
+			modFiles.from(generatedResources)
+		}
+	}
 	accessWidenerPath = file("src/main/resources/modern_glass_doors.accesswidener")
 	runs {
 		// This adds a new Gradle task that runs the Datagen API: `./gradlew runDatagen`
@@ -88,21 +96,21 @@ loom {
 			runDir 'build/datagen'
 
 			vmArg '-Dfabric-api.datagen'
-			vmArg "-Dfabric-api.datagen.output-dir=${file("src/main/resources_generated")}"
+			vmArg "-Dfabric-api.datagen.output-dir=${generatedResources.get().asFile}"
 		}
 	}
 }
 
 
-// Add previously datagenned files into the JAR
-sourceSets {
-	main {
-		resources {
-			srcDirs += [
-				'src/main/resources_generated'
-			]
-		}
-	}
+// Datagen needs classes/processResources itself, so package its output directly
+// instead of making processResources depend on runDatagen (a circular dependency).
+tasks.named('runDatagen') {
+	outputs.dir(generatedResources)
+}
+
+tasks.named('runClient') {
+	dependsOn tasks.named('runDatagen')
+	classpath += files(generatedResources)
 }
 
 processResources {
@@ -140,3 +148,15 @@ java {
 	// with development. Uncomment this line to generate them.
 	// withJavadocJar()
 }
+
+['jar', 'sourcesJar'].each { taskName ->
+	tasks.named(taskName) {
+		dependsOn tasks.named('runDatagen')
+		from('LICENSE')
+		from(generatedResources) {
+			exclude '.cache/**'
+		}
+	}
+}
+
+apply from: 'gradle/verify-runtime-resources.gradle'

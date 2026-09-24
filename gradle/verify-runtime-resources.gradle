@@ -1,0 +1,70 @@
+import groovy.json.JsonSlurper
+import java.util.zip.ZipFile
+
+// Check the shipped archive, so a successful compile cannot hide missing models.
+tasks.register('verifyRuntimeResources') {
+	group = 'verification'
+	description = 'Checks that the remapped JAR contains complete door and trapdoor resources.'
+	dependsOn tasks.named('remapJar')
+	def runtimeJar = tasks.named('remapJar').flatMap { it.archiveFile }
+	inputs.file(runtimeJar)
+
+	doLast {
+		new ZipFile(runtimeJar.get().asFile).withCloseable { archive ->
+			def requireEntry = { String path ->
+				def entry = archive.getEntry(path)
+				if (entry == null) {
+					throw new GradleException("Missing runtime resource: ${path}")
+				}
+				entry
+			}
+			def readJson = { String path ->
+				archive.getInputStream(requireEntry(path)).withCloseable {
+					new JsonSlurper().parse(it, 'UTF-8')
+				}
+			}
+			def requireReference = { String reference, String folder, String extension ->
+				if (reference.startsWith('modern_glass_doors:')) {
+					requireEntry("assets/modern_glass_doors/${folder}/${reference.split(':', 2)[1]}.${extension}")
+				}
+			}
+			def materials = ['oak', 'spruce', 'birch', 'acacia', 'jungle', 'dark_oak',
+				'crimson', 'warped', 'iron', 'mangrove', 'bamboo', 'cherry']
+			materials.each { material ->
+				['door', 'trapdoor'].each { type ->
+					def name = "${material}_glass_${type}"
+					def state = readJson("assets/modern_glass_doors/blockstates/${name}.json")
+					def expectedVariants = type == 'door' ? 32 : 16
+					if (state.variants?.size() != expectedVariants) {
+						throw new GradleException("Incomplete block states for ${name}")
+					}
+					state.variants.values().each { variant ->
+						if (!(variant.model instanceof String)) {
+							throw new GradleException("Missing model for ${name}: ${variant}")
+						}
+						requireReference(variant.model, 'models', 'json')
+					}
+					readJson("assets/modern_glass_doors/models/item/${name}.json")
+					readJson("data/modern_glass_doors/recipes/${name}.json")
+					readJson("data/modern_glass_doors/loot_tables/blocks/${name}.json")
+				}
+			}
+			archive.entries().each { entry ->
+				if (entry.name.startsWith('assets/modern_glass_doors/models/') && entry.name.endsWith('.json')) {
+					def model = readJson(entry.name)
+					if (model.parent) {
+						requireReference(model.parent, 'models', 'json')
+					}
+					model.textures?.values()?.each { texture ->
+						requireReference(texture, 'textures', 'png')
+					}
+				}
+			}
+			logger.lifecycle('Verified runtime resources for all 24 glass doors and trapdoors.')
+		}
+	}
+}
+
+tasks.named('check') {
+	dependsOn tasks.named('verifyRuntimeResources')
+}
